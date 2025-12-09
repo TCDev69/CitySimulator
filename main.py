@@ -18,6 +18,7 @@ water = 0
 water_req = 0
 shops = 0
 industries = 0
+moneyMed = 0
 
 def clear():
     if os.name == 'nt':
@@ -46,7 +47,7 @@ def progressBar(val,valMax, max=10):
 def printGrid(grid, happiness=happiness):
     global conta
     clear()
-
+    build = (" ☐","🏠","🛍️","🏭","💧","⚡","🏫","🏥","🚒","🚓")
     # 0 = vuoto
     # 1 = casa
     # 2 = negozio
@@ -68,30 +69,30 @@ def printGrid(grid, happiness=happiness):
         conta += 1
         for cell in row:
             if cell == 0:
-                print(" ☐", end="")
+                print(build[0], end="")
             elif cell == 1:
-                print("🏠", end="")
+                print(build[1], end="")
             elif cell == 2:
-                print("🏠", end="")
+                print(build[2], end="")
             elif cell == 3:
-                print("🏭", end="")
+                print(build[3], end="")
             elif cell == 4:
-                print("💧", end="")
+                print(build[4], end="")
             elif cell == 5:
-                print("⚡", end="")
+                print(build[5], end="")
             elif cell == 6:
-                print("🏫", end="")
+                print(build[6], end="")
             elif cell == 7:
-                print("🏥", end="")
+                print(build[7], end="")
             elif cell == 8:
-                print("🚒", end="")
+                print(build[8], end="")
             elif cell == 9:
-                print("🚓", end="")
+                print(build[9], end="")
         print()
     print("--------------------------------------------")
     print(f"            Upgrade Grid: {50000 * grid_upgrade}$")
     print("┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
-    print(f"┃ Soldi: \t {money}$ (+{income}$) ")
+    print(f"┃ Soldi: \t {money}$ (+{moneyMed}$/s) ")
     print(f"┃ Popolazione: \t {progressBar(population, max_population)} {population}/{max_population}")
     print(f"┃ Felicità: \t {progressBar(happiness, 10)} {happiness}/10")
     print(f"┃ Energia: \t {progressBar(energy, energy_req)} {energy}/{energy_req}")
@@ -103,7 +104,7 @@ def printGrid(grid, happiness=happiness):
 def printSimpleGrid(grid):
     global conta
     clear()
-
+    build = (" ☐","🏠","🛍️","🏭","💧","⚡","🏫","🏥","🚒","🚓")
     # 0 = vuoto
     # 1 = casa
     # 2 = negozio
@@ -125,25 +126,25 @@ def printSimpleGrid(grid):
         conta += 1
         for cell in row:
             if cell == 0:
-                print(" ☐", end="")
+                print(build[0], end="")
             elif cell == 1:
-                print("🏠", end="")
+                print(build[1], end="")
             elif cell == 2:
-                print("🛍️", end="")
+                print(build[2], end="")
             elif cell == 3:
-                print("🏭", end="")
+                print(build[3], end="")
             elif cell == 4:
-                print("💧", end="")
+                print(build[4], end="")
             elif cell == 5:
-                print("⚡", end="")
+                print(build[5], end="")
             elif cell == 6:
-                print("🏫", end="")
+                print(build[6], end="")
             elif cell == 7:
-                print("🏥", end="")
+                print(build[7], end="")
             elif cell == 8:
-                print("🚒", end="")
+                print(build[8], end="")
             elif cell == 9:
-                print("🚓", end="")
+                print(build[9], end="")
         print()
     print()
         
@@ -237,16 +238,6 @@ def calcWater():
                 water += 25
     return water
 
-"""
-def calcPopulation():
-    global population, grid, pop_house
-    population = 0
-    for row in grid:
-        for cell in row:
-            if cell == 2:
-                population += pop_house  # ogni casa supporta 'pop_house' persone
-    return population
-"""
 def calcPopulation():
     """
     ogni volta che viene chiamata questa funzione, la popolazione potrebbe aumentare o diminuire in base alla felicità, 
@@ -300,12 +291,20 @@ def calcPopulation():
 history = []
 
 def getMoney():
-    global money, income
+    global money, income, moneyMed
     income = 0
+    s = 0
     rnd = random.random()
     if rnd <= 0.25:
         income = int(population * 0.3 + shops * 0.5 + industries * 0.8) * 10
         money += income
+    history.append(income)
+    if len(history) > 10:
+        history.pop(0)
+        for i in range(len(history)-1):
+            s += history[i]
+        moneyMed = s // len(history)
+        
 
 def box(scelte, divisore="*", separatore="-", preZero=False, startZero=False, startNum=True):
     righe = []
@@ -417,6 +416,8 @@ def debug(grid):
 def play():
     global money, population, shops, industries
     addGrid(grid)
+    for i in range(10):
+        money = updategrid(grid, (0, i), i+1, money)
     
     run = True
     while run:
