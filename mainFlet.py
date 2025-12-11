@@ -6,6 +6,7 @@ import json
 
 # Variabili globali
 grid = []
+history = []
 grid_upgrade = 1
 money = 100000
 population = 0
@@ -19,41 +20,60 @@ water_req = 0
 shops = 0
 industries = 0
 moneyMed = 0
-history = []
 income = 0
+demand_house = 0
+demand_shop = 0
+demand_industry = 0
+tax_rate = 10  # percentuale tasse
 game_running = False
 
 # Emoji per gli edifici
 BUILD_ICONS = {
     0: "☐",
-    1: "🏠",
-    2: "🛍️",
-    3: "🏭",
-    4: "💧",
-    5: "⚡",
-    6: "🏫",
-    7: "🏥",
-    8: "🚒",
-    9: "🚓"
+    1: "🛣️",  # Strada
+    2: "🏠",
+    3: "🛍️",
+    4: "🏭",
+    5: "💧",
+    6: "⚡",
+    7: "🏫",
+    8: "🏥",
+    9: "🚒",
+    10: "🚓"
 }
 
 BUILD_NAMES = {
     0: "Vuoto",
-    1: "Casa",
-    2: "Negozio",
-    3: "Industria",
-    4: "Generatore Acqua",
-    5: "Generatore Energia",
-    6: "Scuola",
-    7: "Ospedale",
-    8: "Vigile del Fuoco",
-    9: "Polizia"
+    1: "Strada",
+    2: "Casa",
+    3: "Negozio",
+    4: "Industria",
+    5: "Generatore Acqua",
+    6: "Generatore Energia",
+    7: "Scuola",
+    8: "Ospedale",
+    9: "Vigile del Fuoco",
+    10: "Polizia"
+}
+
+BUILD_COSTS = {
+    0: "-100",   # demolizione
+    1: "-300",   # strada
+    2: "-1000",
+    3: "-1500",
+    4: "-2000",
+    5: "-5000",
+    6: "-5000",
+    7: "-8000",
+    8: "-8000",
+    9: "-8000",
+    10: "-8000"
 }
 
 def load():
     global grid, money, population, pop_house, max_population, happiness
     global energy, energy_req, water, water_req, shops, industries
-    global moneyMed, history, income, grid_upgrade
+    global moneyMed, history, income, grid_upgrade, tax_rate
 
     try:
         with open("savegame.json", "r") as f:
@@ -74,6 +94,8 @@ def load():
             history = data["history"]
             income = data["income"]
             grid_upgrade = data["grid_upgrade"]
+            tax_rate = data.get("tax_rate", 10)
+            recount_structures()
     except FileNotFoundError:
         data = json.load(f)
         grid = data["grid"]
@@ -96,7 +118,7 @@ def load():
 def save(e=None):
     global grid, money, population, pop_house, max_population, happiness
     global energy, energy_req, water, water_req, shops, industries
-    global moneyMed, history, income, grid_upgrade
+    global moneyMed, history, income, grid_upgrade, tax_rate
 
     data = {
         "grid": grid,
@@ -114,12 +136,26 @@ def save(e=None):
         "moneyMed": moneyMed,
         "history": history,
         "income": income,
-        "grid_upgrade": grid_upgrade
+        "grid_upgrade": grid_upgrade,
+        "tax_rate": tax_rate
     }
 
     with open("savegame.json", "w") as f:
         json.dump(data, f)       
         print("Game saved.") 
+
+
+def recount_structures():
+    """Ricalcola negozi e industrie in base alla griglia corrente."""
+    global shops, industries
+    shops = 0
+    industries = 0
+    for row in grid:
+        for cell in row:
+            if cell == 3:
+                shops += 1
+            elif cell == 4:
+                industries += 1
 
 def addGrid(grid):
     for i in range(10):
@@ -127,17 +163,6 @@ def addGrid(grid):
         for e in range(20):
             row.append(0)
         grid.append(row)
-
-def progressBar(val, valMax, max=10):
-    if val > valMax:
-        val = valMax
-    if valMax == 0:
-        ratio = 0
-    else:
-        ratio = val / valMax
-    barra = int(ratio * max)
-    rimanente = max - barra
-    return "[" + "█" * barra + " " * rimanente + "]"
 
 def calcHappiness():
     global happiness, grid, energy, energy_req, water, water_req, population
@@ -155,35 +180,54 @@ def calcHappiness():
         shortage = (water_req - water) / water_req
         penalty = int(shortage * 5) + 1
         score = score - penalty
+        
+    if tax_rate > 20:
+        score -= 2
+    elif tax_rate > 10:
+        score -= 1
+    elif tax_rate < 5:
+        score += 1        
 
-    # Servizi
-    has_school = False
-    has_hospital = False
-    has_fire = False
-    has_police = False
+    # Servizi pubblici
+    school_count = 0
+    hospital_count = 0
+    fire_count = 0
+    police_count = 0
 
     for row in grid:
         for cell in row:
-            if cell == 6:
-                has_school = True
             if cell == 7:
-                has_hospital = True
+                school_count += 1
             if cell == 8:
-                has_fire = True
+                hospital_count += 1
             if cell == 9:
-                has_police = True
+                fire_count += 1
+            if cell == 10:
+                police_count += 1
 
-    if not has_school:
-        score = score - 1
-    if not has_hospital:
-        score = score - 1
-    if not has_fire:
-        score = score - 1
-    if not has_police:
-        score = score - 1
+    service_capacity = 50
+    min_capacity = min(
+        school_count * service_capacity if school_count > 0 else 0,
+        hospital_count * service_capacity if hospital_count > 0 else 0,
+        fire_count * service_capacity if fire_count > 0 else 0,
+        police_count * service_capacity if police_count > 0 else 0
+    )
 
-    if energy >= energy_req and water >= water_req and has_school and has_hospital and has_fire and has_police:
-        score = score + 1
+    # Penalità se manca almeno un servizio
+    if school_count == 0 or hospital_count == 0 or fire_count == 0 or police_count == 0:
+        score -= 2  # penalità maggiore se manca almeno uno
+
+    # Penalità se la popolazione supera la capacità minima
+    if population > min_capacity and min_capacity > 0:
+        score -= 2
+
+    # Bonus se tutto ok
+    if (
+        energy >= energy_req and water >= water_req and
+        school_count > 0 and hospital_count > 0 and fire_count > 0 and police_count > 0 and
+        population <= min_capacity
+    ):
+        score += 1
 
     if score < 0:
         score = 0
@@ -201,7 +245,7 @@ def calcEnergy():
     energy = 0
     for row in grid:
         for cell in row:
-            if cell == 5:
+            if cell == 6:
                 energy += 25
     return energy
 
@@ -213,21 +257,66 @@ def calcWater():
     water = 0
     for row in grid:
         for cell in row:
-            if cell == 4:
+            if cell == 5:
                 water += 25
     return water
+
+def calcDemand():
+    global demand_house, demand_shop, demand_industry, population, shops, industries, happiness, max_population
+
+    # Domanda case: cresce se la popolazione è vicina alla capacità massima
+    if max_population == 0:
+        demand_house = 100
+    else:
+        ratio = population / max_population if max_population > 0 else 0
+        demand_house = int((ratio * 100) + (happiness - 5) * 5)
+        demand_house = max(0, min(demand_house, 100))
+
+    # Domanda negozi: cresce se ci sono molte case e pochi negozi
+    demand_shop = max(0, min(100, int((population / (shops + 1)) * 2)))
+    # Domanda industrie: cresce se ci sono molti negozi e poche industrie
+    demand_industry = max(0, min(100, int((shops / (industries + 1)) * 2)))
 
 def calcPopulation():
     global population, grid, pop_house, max_population, happiness, shops, industries
     max_population = 0
     for row in grid:
         for cell in row:
-            if cell == 1:
-                max_population += pop_house
             if cell == 2:
-                max_population += pop_house // 2
+                max_population += pop_house
             if cell == 3:
+                max_population += pop_house // 2
+            if cell == 4:
                 max_population += pop_house // 3
+
+    # Calcolo capacità servizi pubblici
+    school_count = 0
+    hospital_count = 0
+    fire_count = 0
+    police_count = 0
+    for row in grid:
+        for cell in row:
+            if cell == 7:
+                school_count += 1
+            if cell == 8:
+                hospital_count += 1
+            if cell == 9:
+                fire_count += 1
+            if cell == 10:
+                police_count += 1
+    service_capacity = 50
+    min_capacity = min(
+        school_count * service_capacity if school_count > 0 else 0,
+        hospital_count * service_capacity if hospital_count > 0 else 0,
+        fire_count * service_capacity if fire_count > 0 else 0,
+        police_count * service_capacity if police_count > 0 else 0
+    )
+
+    # La popolazione non può superare la capacità minima dei servizi pubblici
+    if min_capacity == 0:
+        population = 0
+    elif population > min_capacity:
+        population = min_capacity
 
     rnd = random.random()
     if rnd <= 0.3:
@@ -252,27 +341,27 @@ def calcPopulation():
                 decrease = 1
             population -= decrease
 
+        # Limite massimo popolazione
         if population > max_population:
             population = max_population
+        # Limite servizi pubblici
+        if min_capacity > 0 and population > min_capacity:
+            population = min_capacity
         if population < 0:
             population = 0
 
     return population
 
 def getMoney():
-    global money, income, moneyMed, population, shops, industries, history
-    income = 0
-    s = 0
-    rnd = random.random()
-    if rnd <= 0.25:
-        income = int(population * 0.3 + shops * 0.5 + industries * 0.8) * 10
-        money += income
+    global money, income, moneyMed, population, shops, industries, history, tax_rate
+    # Reddito base da popolazione e attività
+    taxable = int(population * 1.2 + shops * 4 + industries * 6)
+    income = int(taxable * (tax_rate / 100))
+    money += income
     history.append(income)
     if len(history) > 10:
         history.pop(0)
-        for i in range(len(history) - 1):
-            s += history[i]
-        moneyMed = s // len(history)
+    moneyMed = sum(history) // len(history) if history else 0
 
 def buyMore_Grid(grid, money):
     global grid_upgrade
@@ -283,13 +372,65 @@ def buyMore_Grid(grid, money):
         grid_upgrade += 1
     return money
 
+def nearRoad(row, col):
+    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1), (-1,-1),(-1,1),(1,-1),(1,1)]:
+        r, c = row + dr, col + dc
+        if 0 <= r < len(grid) and 0 <= c < len(grid[0]):
+            if grid[r][c] == 1:  # strada
+                return True
+    return False
+
+def all_roads_connected(grid):
+    # Trova tutte le posizioni delle strade
+    road_positions = [(r, c) for r, row in enumerate(grid) for c, cell in enumerate(row) if cell == 1]
+    if not road_positions:
+        return True  # Nessuna strada, consideriamo valido
+
+    # BFS per trovare tutte le strade collegate partendo dalla prima
+    visited = set()
+    queue = [road_positions[0]]
+    while queue:
+        r, c = queue.pop(0)
+        if (r, c) in visited:
+            continue
+        visited.add((r, c))
+        for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < len(grid) and 0 <= nc < len(grid[0]):
+                if grid[nr][nc] == 1 and (nr, nc) not in visited:
+                    queue.append((nr, nc))
+    # Se tutte le strade sono state visitate, sono collegate
+    return len(visited) == len(road_positions)
+
+def road_components(grid):
+    """Conta le componenti connesse di strade (id 1) con 4-neighbors."""
+    road_positions = [(r, c) for r, row in enumerate(grid) for c, cell in enumerate(row) if cell == 1]
+    visited = set()
+    comps = 0
+
+    for start in road_positions:
+        if start in visited:
+            continue
+        comps += 1
+        stack = [start]
+        while stack:
+            r, c = stack.pop()
+            if (r, c) in visited:
+                continue
+            visited.add((r, c))
+            for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < len(grid) and 0 <= nc < len(grid[0]) and grid[nr][nc] == 1 and (nr, nc) not in visited:
+                    stack.append((nr, nc))
+    return comps
+
 def main(page: ft.Page):
     global game_running, grid, money, population, shops, industries, grid_upgrade
     
     page.title = "City Simulator"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 20
-    page.window.width = 1050
+    page.window.width = 1050 + page.padding
     page.window.height = 700
     page.window.maximizable = False
     page.window.resizable = False
@@ -310,7 +451,7 @@ def main(page: ft.Page):
     def new_game(e):
         global grid, money, population, pop_house, max_population, happiness
         global energy, energy_req, water, water_req, shops, industries
-        global moneyMed, history, income, grid_upgrade
+        global moneyMed, history, income, grid_upgrade, tax_rate
         
         grid = []
         money = 100000
@@ -328,8 +469,10 @@ def main(page: ft.Page):
         history = []
         income = 0
         grid_upgrade = 1
-        
+        tax_rate = 10
+
         addGrid(grid)
+        grid[0][0] = 1  # Inizia con una strada
         show_game_screen()
     
     # Funzione per caricare partita
@@ -346,18 +489,8 @@ def main(page: ft.Page):
             show_message(f"Errore nel caricamento: {str(ex)}")
     
     # Funzione per mostrare messaggi
-    def show_message(message):
-        def close_dialog(e):
-            dialog.open = False
-            page.update()
-        
-        dialog = ft.AlertDialog(
-            title=ft.Text("Notifica"),
-            content=ft.Text(message),
-            actions=[ft.TextButton("OK", on_click=close_dialog)]
-        )
-        page.dialog = dialog
-        dialog.open = True
+    def show_message(message: str):
+        page.open(ft.SnackBar(ft.Text(f"⚠️ {message}",weight=ft.FontWeight.BOLD)))
         page.update()
     
     # Homepage
@@ -431,16 +564,66 @@ def main(page: ft.Page):
     
     # Funzione per aggiornare le statistiche
     def update_stats():
+        textUpgrade_grid = 50000 * grid_upgrade
+        textUpgrade_grid = '{:,}'.format(textUpgrade_grid).replace(',', '.')
+        textMoney = '{:,}'.format(money).replace(',', '.')
         stats_text.value = f"""
-💰 Soldi: {money}$ (+{moneyMed}$/s)
-👥 Popolazione: {progressBar(population, max_population)} {population}/{max_population}
-😊 Felicità: {progressBar(happiness, 10)} {happiness}/10
-⚡ Energia: {progressBar(energy, energy_req)} {energy}/{energy_req}
-💧 Acqua: {progressBar(water, water_req)} {water}/{water_req}
-📊 Upgrade Grid: {50000 * grid_upgrade}$
-"""
+💰 Soldi: {textMoney}$ (+{moneyMed}$/s)
+📊 Upgrade Grid: {textUpgrade_grid}$
+💸 Tasse: {tax_rate}%
+            """
+
+        # Aggiorna le progress bar
+        pop_bar.value = population / max_population if max_population > 0 else 0
+        pop_label.value = f"👥 Popolazione: {population}/{max_population}"
+
+        happiness_bar.value = happiness / 10 if happiness > 0 else 0
+        happiness_label.value = f"😊 Felicità: {happiness}/10"
+
+        energy_bar.value = energy / energy_req if energy_req > 0 else 0
+        energy_label.value = f"⚡ Energia: {energy}/{energy_req}"
+
+        water_bar.value = water / water_req if water_req > 0 else 0
+        water_label.value = f"💧 Acqua: {water}/{water_req}"
+
+        # Servizi pubblici
+        school_count = 0
+        hospital_count = 0
+        fire_count = 0
+        police_count = 0
+        for row in grid:
+            for cell in row:
+                if cell == 7:
+                    school_count += 1
+                if cell == 8:
+                    hospital_count += 1
+                if cell == 9:
+                    fire_count += 1
+                if cell == 10:
+                    police_count += 1
+        service_capacity = 50
+        min_capacity = min(
+            school_count * service_capacity if school_count > 0 else 0,
+            hospital_count * service_capacity if hospital_count > 0 else 0,
+            fire_count * service_capacity if fire_count > 0 else 0,
+            police_count * service_capacity if police_count > 0 else 0
+        )
+        services_label.value = f"Servizi Pubblici: {population}/{min_capacity if min_capacity > 0 else 'N/A'}"
+        services_bar.value = population / min_capacity if min_capacity > 0 else 0
+
+        tax_label.value = f"Tasse: {tax_rate}%"
+        tax_slider.value = tax_rate
+
+        calcDemand()
+        demand_text.value = (
+            f"Domanda:\n"
+            f"🏠 Case: {demand_house}\n"
+            f"🛍️ Negozi: {demand_shop}\n"
+            f"🏭 Industrie: {demand_industry}"
+        )
+            
         page.update()
-    
+        
     # Funzione per aggiornare la griglia visuale
     def update_grid_display():
         grid_container.controls.clear()
@@ -484,31 +667,56 @@ def main(page: ft.Page):
     # Funzione per piazzare un edificio
     def place_building(row, col):
         global money, shops, industries, grid
-        
-        if money < 1000 and selected_building["type"] != 0:
-            show_message("Fondi insufficienti!")
+
+        build_type = selected_building["type"]
+
+        # Se non è vuoto o strada, deve essere vicino a una strada
+        if build_type != 0 and build_type != 1 and not nearRoad(row, col):
+            show_message("Puoi costruire solo vicino a una strada!")
             return
-        
+
+        # Se è una strada, verifica che non crei un nuovo pezzo isolato
+        if build_type == 1:
+            old_cell = grid[row][col]
+            comps_before = road_components(grid)
+            # Simula la posa
+            grid[row][col] = 1
+            comps_after = road_components(grid)
+            # Se aumenta il numero di componenti (e non era zero), la nuova strada è isolata
+            if comps_before > 0 and comps_after > comps_before:
+                grid[row][col] = old_cell  # ripristina
+                show_message("Le strade devono restare collegate (niente tratti isolati).")
+                return
+            # ripristina, verrà assegnato più sotto
+            grid[row][col] = old_cell
+        elif build_type != 0:
+            if money < abs(int(BUILD_COSTS[build_type])):
+                show_message("Fondi insufficienti!")
+                return
+
         old_cell = grid[row][col]
-        
-        # Aggiorna contatori
-        if old_cell == 2:
+
+        # Aggiorna contatori rimuovendo il precedente
+        if old_cell == 3:
             shops -= 1
-        elif old_cell == 3:
+        elif old_cell == 4:
             industries -= 1
-        
-        if selected_building["type"] == 2:
+
+        # Aggiorna contatori aggiungendo il nuovo
+        if build_type == 3:
             shops += 1
-        elif selected_building["type"] == 3:
+        elif build_type == 4:
             industries += 1
-        
-        grid[row][col] = selected_building["type"]
-        
-        if selected_building["type"] != 0:
-            money -= 1000
-        elif old_cell != 0:
-            money -= 100  # Costo di demolizione
-        
+
+        grid[row][col] = build_type
+
+        if build_type != 0 and build_type != 1:
+            money -= int(BUILD_COSTS[build_type])
+        elif build_type == 1:
+            money -= 300
+        elif build_type == 0 and old_cell != 0:
+            money -= 100  # demolizione
+
         update_grid_display()
         update_stats()
     
@@ -542,6 +750,7 @@ def main(page: ft.Page):
                     btn.bgcolor = ft.Colors.BLUE_GREY_800
             page.update()
             selected_text.value = f"Selezionato: {BUILD_NAMES[building_type]}"
+            selected_cost.value = f"Costo: {BUILD_COSTS[building_type]}$"
             page.update()
         return click
     
@@ -553,6 +762,7 @@ def main(page: ft.Page):
             calcPopulation()
             calcHappiness()
             getMoney()
+            calcDemand()
             update_stats()
             time.sleep(0.5)
     
@@ -564,11 +774,37 @@ def main(page: ft.Page):
         weight=ft.FontWeight.BOLD
     )
     
+    # Progress bars per le statistiche
+    pop_label = ft.Text("👥 Popolazione: 0/0", size=12)
+    pop_bar = ft.ProgressBar(value=0, width=250, color=ft.Colors.BLUE, bgcolor=ft.Colors.BLUE_GREY_800)
+    
+    happiness_label = ft.Text("😊 Felicità: 0/10", size=12)
+    happiness_bar = ft.ProgressBar(value=0, width=250, color=ft.Colors.GREEN, bgcolor=ft.Colors.BLUE_GREY_800)
+    
+    energy_label = ft.Text("⚡ Energia: 0/0", size=12)
+    energy_bar = ft.ProgressBar(value=0, width=250, color=ft.Colors.YELLOW, bgcolor=ft.Colors.BLUE_GREY_800)
+    
+    water_label = ft.Text("💧 Acqua: 0/0", size=12)
+    water_bar = ft.ProgressBar(value=0, width=250, color=ft.Colors.CYAN, bgcolor=ft.Colors.BLUE_GREY_800)
+    
+    services_label = ft.Text("Servizi Pubblici: 0/0", size=12)
+    services_bar = ft.ProgressBar(value=0, width=250, color=ft.Colors.PURPLE, bgcolor=ft.Colors.BLUE_GREY_800)
+
+    tax_label = ft.Text(f"Tasse: {tax_rate}%", size=12)
+
+    def update_tax(e):
+        global tax_rate
+        tax_rate = int(e.control.value)
+        tax_label.value = f"Tasse: {tax_rate}%"
+        page.update()
+
+    tax_slider = ft.Slider(min=0, max=30, divisions=30, value=tax_rate, on_change=update_tax)
+
     # Pannello edifici
     building_buttons = []
     building_panel = ft.Column(spacing=5)
     
-    for i in range(10):
+    for i in range(11):  # ora da 0 a 10
         btn = ft.Container(
             content=ft.Row([
                 ft.Text(BUILD_ICONS[i], size=20),
@@ -583,6 +819,9 @@ def main(page: ft.Page):
         building_panel.controls.append(btn)
     
     selected_text = ft.Text(f"Selezionato: {BUILD_NAMES[0]}", size=12, weight=ft.FontWeight.BOLD)
+    selected_cost = ft.Text(f"Costo: {BUILD_COSTS[0]}$", size=12)
+    
+    demand_text = ft.Text("", size=14, weight=ft.FontWeight.BOLD)
     
     # Pulsante upgrade
     upgrade_button = ft.ElevatedButton(
@@ -625,9 +864,26 @@ def main(page: ft.Page):
                         [
                             ft.Text("City Simulator", size=24, weight=ft.FontWeight.BOLD),
                             stats_text,
+                            pop_label,
+                            pop_bar,
+                            happiness_label,
+                            happiness_bar,
+                            energy_label,
+                            energy_bar,
+                            water_label,
+                            water_bar,
+                            services_label,
+                            services_bar,
+                            tax_label,
+                            tax_slider,
+                            ft.Divider(),
+                            demand_text,
                             ft.Divider(),
                             ft.Text("Edifici", size=18, weight=ft.FontWeight.BOLD),
-                            selected_text,
+                            ft.Row([
+                                selected_text,
+                                selected_cost
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                             building_panel,
                             ft.Divider(),
                             upgrade_button,

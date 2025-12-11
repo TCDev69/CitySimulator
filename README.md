@@ -19,3 +19,10 @@
 ### Resources Management
 - [x] Budget
 - [x] Energia/Acqua prodotta/consumata
+
+### TODO:
+- [x] guadagno soldi piu' realistico (tasse %, sceglibile dall'utente)
+- [x] richiesta di case/negozi/industrie da costruire
+- [x] ogni cosa ha un suo prezzo
+- [x] aggiungere le strade
+- [x] servizi pubblici max persone
