@@ -267,6 +267,8 @@ def calcDemand():
     # Domanda case: cresce se la popolazione è vicina alla capacità massima
     if max_population == 0:
         demand_house = 100
+    elif population < max_population:
+        demand_house = 0
     else:
         ratio = population / max_population if max_population > 0 else 0
         demand_house = int((ratio * 100) + (happiness - 5) * 5)
